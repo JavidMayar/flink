@@ -4,15 +4,18 @@ import org.apache.flink.api.common.functions.FlatMapFunction;
 import org.apache.flink.api.common.functions.MapFunction;
 import org.apache.flink.api.java.DataSet;
 import org.apache.flink.api.java.ExecutionEnvironment;
-import org.apache.flink.api.java.tuple.Tuple3;
 import org.apache.flink.graph.Edge;
 import org.apache.flink.graph.Graph;
+import org.apache.flink.graph.Vertex;
 import org.apache.flink.graph.utils.Tuple3ToEdgeMap;
 import org.apache.flink.util.Collector;
 
 /**
- * This program implement the HITS algorithm.
- * the result is combination of three values. first is the ID, Second is the Hub Value and third is  the Authority Value.
+ * This program is an example for HITS algorithm.
+ * the result is either a hub value or authority value base user selection.
+ *
+ * If no arguments are provided, the example runs with a random graph of 10 vertices
+ * and random edge weights.
  */
 public class HITSExample {
 
@@ -34,13 +37,12 @@ public class HITSExample {
             }
         }, env);
 
-        // add  graph to HITS class with iteration value.
-        DataSet<Tuple3<Long, Double, Double>> hubAndAuthority = new HITS(graph,maxIterations).run();
+        // add  graph to HITS class with iteration value and hub or authority enum value.
+        DataSet<Vertex<Long, Double>> HubORAuthority = graph.run(
+                new HITS<Long>(maxIterations, Hits.AUTHORITY))
+                .getVertices();
 
-
-        // print the retrieved data set.
-        hubAndAuthority.print();
-
+        HubORAuthority.print();
         env.execute("Hits Example");
 
     }
@@ -53,12 +55,12 @@ public class HITSExample {
     private static long numPages = 10;
     private static String edgeInputPath = null;
     private static String outputPath = null;
-    private static int maxIterations = 5;
+    private static int maxIterations = 10;
 
     private static boolean parseParameters(String[] args) {
 
         if(args.length > 0) {
-            if(args.length != 3) {
+            if(args.length != 4) {
                 System.err.println("Usage: HITS <input edges path> <output path> <num iterations>");
                 return false;
             }
@@ -67,11 +69,12 @@ public class HITSExample {
             edgeInputPath = args[0];
             outputPath = args[1];
             maxIterations = Integer.parseInt(args[2]);
+
         } else {
             System.out.println("Executing HITS example with default parameters and built-in default data.");
             System.out.println("  Provide parameters to read input data from files.");
             System.out.println("  See the documentation for the correct format of input files.");
-            System.out.println("  Usage: HITS <input edges path> <output path> <num iterations>");
+            System.out.println("  Usage: HITS <input edges path> <output path> <num iterations> ");
         }
         return true;
     }

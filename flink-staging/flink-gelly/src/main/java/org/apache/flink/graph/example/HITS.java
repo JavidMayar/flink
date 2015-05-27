@@ -1,96 +1,136 @@
 package org.apache.flink.graph.example;
 
-import org.apache.flink.api.common.functions.MapFunction;
-import org.apache.flink.api.java.DataSet;
-import org.apache.flink.api.java.tuple.Tuple2;
-import org.apache.flink.api.java.tuple.Tuple3;
-import org.apache.flink.graph.EdgeDirection;
+
 import org.apache.flink.graph.Graph;
-import org.apache.flink.graph.ReduceNeighborsFunction;
+import org.apache.flink.graph.GraphAlgorithm;
+import org.apache.flink.graph.spargel.MessageIterator;
+import org.apache.flink.graph.spargel.MessagingFunction;
+import org.apache.flink.graph.spargel.VertexUpdateFunction;
 
 /**
  *
- * This class implement the HITS algorithm by using flink Gelly API
+ * This class implements the HITS algorithm by using flink Gelly API
  *Hyperlink-Induced Topic Search (HITS; also known as hubs and authorities) is a link analysis algorithm that rates Web pages,
  *developed by Jon Kleinberg.
  *
+ * The algorithm performs a series of iterations, each consisting of two basic steps:
+ *
+ *Authority Update: Update each node's Authority score to be equal to the sum of the Hub Scores of each node that points to it.
+ * That is, a node is given a high authority score by being linked from pages that are recognized as Hubs for information.
+ *Hub Update: Update each node's Hub Score to be equal to the sum of the Authority Scores of each node that it points to.
+ * That is, a node is given a high hub score by linking to nodes that are considered to be authorities on the subject.
+ *
+ * The Hub score and Authority score for a node is calculated with the following algorithm:
+ *  Start with each node having a hub score and authority score of 1.
+ *  Run the Authority Update Rule
+ *  Run the Hub Update Rule
+ *  Repeat from the second step as necessary.
+ *
+ * http://en.wikipedia.org/wiki/HITS_algorithm
+ *
  */
-public class HITS {
+public class HITS<K> implements GraphAlgorithm<K, Double, Double> {
 
-    static Graph< Long, Double, Double > mainGraph;
+    private int maxIterations;
+    Hits hubAuthoritySelection;
 
-    static int iterationValue;
+    public HITS(int maxValue, Hits hubAuthority){
 
-
-    public HITS( Graph< Long, Double, Double > myGraph, int iteration ){
-
-        mainGraph = myGraph;
-        iterationValue = iteration;
-    }
-    /**
-     * This function compute the hub and authority values from graph
-     * and update the graph in each iteration with hubValues and authorityValues
-     *
-     * return DataSet< Tuple3 > with IDs, Hub Values, Authority Values
-     *
-     */
-    public static DataSet<Tuple3<Long, Double, Double>> run(){
-
-        DataSet<Tuple2<Long, Double>> authorityValues = null;
-        DataSet<Tuple2<Long, Double>> hubValues = null;
-
-        for(int i = 0; i < iterationValue ; i++ ) {
-            authorityValues = mainGraph.reduceOnNeighbors(new SumValues(), EdgeDirection.IN);
-
-            mainGraph = mainGraph.joinWithVertices(authorityValues, new MapFunction<Tuple2<Double, Double>, Double>() {
-
-                public Double map(Tuple2<Double, Double> value) {
-                    return value.f0 = value.f1;
-                }
-            });
-
-            hubValues = mainGraph.reduceOnNeighbors(new SumValues(), EdgeDirection.OUT);
-
-
-            mainGraph = mainGraph.joinWithVertices(hubValues, new MapFunction<Tuple2<Double, Double>, Double>() {
-
-                public Double map(Tuple2<Double, Double> value) {
-                    return value.f0 = value.f1;
-                }
-            });
-
-        }
-
-        DataSet<Tuple3<Long, Double, Double> > HubAuthory=hubValues.join(authorityValues).where(0).equalTo(0).map(new HubAuthorityScore());
-        return  HubAuthory;
-
+        maxIterations = maxValue;
+        hubAuthoritySelection = hubAuthority;
 
     }
 
     /**
-     * This Class have the function of map which join the hub and authority DataSets
-     * to one Tuple3 dataSet
-     * Example < ID , HubValue, AuthorityValue >
-     * @param1 HubValueDataSet
-     * @param2 AuthorityValueDatSet
-     *
-     * @return Tuple3DataSet
+     * This function return a graph with hub or Authority values by hubAuthoritySelection.
      */
-
-    public static class HubAuthorityScore implements MapFunction<Tuple2<Tuple2<Long,Double>,Tuple2<Long,Double>>,Tuple3<Long, Double,Double>> {
-
-        @Override
-        public Tuple3<Long, Double, Double> map(Tuple2<Tuple2<Long, Double>, Tuple2<Long, Double>> value) throws Exception {
-            return new Tuple3<Long, Double, Double>(value.f0.f0,value.f0.f1,value.f1.f1);
+    @Override
+    public Graph<K, Double, Double> run(Graph<K, Double, Double> network) throws Exception {
+        switch (hubAuthoritySelection)
+        {
+            case HUB:
+                    if(maxIterations%2==1){  maxIterations-=1;   }
+                    break;
+            case AUTHORITY:
+                    if(maxIterations%2==0){  maxIterations-=1;   }
+                    break;
         }
+
+        return (network.getUndirected()).runVertexCentricIteration(new VertexRankUpdater<K>(), new RankMessenger<K>(), maxIterations);
     }
 
-    // function to sum the neighbor values
-    static final class SumValues implements ReduceNeighborsFunction<Double> {
+
+
+    /**
+     * Function that updates the rank of a vertex by summing up the partial
+     * ranks from all incoming messages.
+     *
+     */
+
+
+    @SuppressWarnings("serial")
+    public static final class VertexRankUpdater<K> extends VertexUpdateFunction<K, Double, Double> {
+
+        public void updateVertex(K vertexKey, Double vertexValue, MessageIterator<Double> inMessages) {
+            double sum= 0.0;
+
+            if(getSuperstepNumber()%2==0){
+
+                // implement hub code here  ?
+
+                /*
+                 sum = 0.0;
+			     for (double msg : inMessages) {
+				    sum += msg;
+
+			     }
+                 */
+
+            }
+            else {
+
+                // implement Authority code here  ?
+
+                /*
+                 sum = 0.0;
+			     for (double msg : inMessages) {
+				    sum += msg;
+
+			     }
+                 */
+
+            }
+            setNewVertexValue(sum);
+            }
+        }
+
+
+    /**
+     * Distributes the rank of a vertex among all target vertices.
+     */
+    @SuppressWarnings("serial")
+    public static final class RankMessenger<K> extends MessagingFunction<K, Double, Double, Double> {
 
         @Override
-        public Double reduceNeighbors(Double firstNeighbor, Double secondNeighbor) {
-            return firstNeighbor + secondNeighbor;
+        public void sendMessages(K vertexId, Double newRank) {
+            sendMessageToAllNeighbors( newRank );
         }
     }
 }
+
+/**
+ * This enum is used to select authority or hub value to be returned by program.
+ */
+
+enum Hits {
+    HUB(0), AUTHORITY(1);
+
+    private int value;
+
+    private Hits(int i) {
+
+        this.value = i;
+
+    }
+}
+
